@@ -102,10 +102,10 @@ public class BotHandler
     {
         var rows = new List<InlineKeyboardButton[]>
         {
-            [InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number")]
+            new[] { InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number") }
         };
         if (isAdmin)
-            rows.Add([InlineKeyboardButton.WithCallbackData("🔄 Оновити номери з файлу", "reload_numbers")]);
+            rows.Add(new[] { InlineKeyboardButton.WithCallbackData("🔄 Оновити номери з файлу", "reload_numbers") });
 
         return new InlineKeyboardMarkup(rows);
     }
