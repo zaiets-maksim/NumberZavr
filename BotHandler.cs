@@ -1,7 +1,6 @@
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
-using Telegram.Bot.Requests;
 
 namespace PhoneBot;
 
@@ -21,7 +20,7 @@ public class BotHandler
         if (msg.Text == "/start")
         {
             var keyboard = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("Отримати номер", "get_number"));
-            await _bot.SendRequest(new SendMessageRequest(msg.Chat.Id, "Бот готовий. Натисни кнопку:") { ReplyMarkup = keyboard });
+            await _bot.SendMessage(msg.Chat.Id, "Бот готовий. Натисни кнопку:", replyMarkup: keyboard);
         }
     }
 
@@ -31,7 +30,7 @@ public class BotHandler
         {
             var (number, _) = await _data.TryIssuePhoneAsync(cb.From.Id);
             string text = number != null ? $"Твій номер: `{number}`" : "База порожня";
-            await _bot.SendRequest(new AnswerCallbackQueryRequest(cb.Id) { Text = text, ShowAlert = true });
+            await _bot.AnswerCallbackQuery(cb.Id, text: text, showAlert: true);
         }
     }
 }
