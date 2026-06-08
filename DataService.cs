@@ -25,12 +25,20 @@ public class DataService
     public async Task LoadPhonesAsync()
     {
         using var http = new HttpClient();
-        var text = await http.GetStringAsync(_numbersUrl);
-        _phones = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                      .Select(l => l.Trim())
-                      .Where(l => l.Length > 0)
-                      .ToList();
+        var rawText = await http.GetStringAsync(_numbersUrl);
+    
+        _phones = rawText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(CleanPhoneNumber)
+            .Where(phone => !string.IsNullOrEmpty(phone))
+            .Distinct() // Щоб уникнути дублікатів
+            .ToList();
+                     
         Console.WriteLine($"[PhoneBot] Loaded {_phones.Count} phones");
+    }
+    
+    private string CleanPhoneNumber(string input)
+    {
+        return new string(input.Where(char.IsDigit).ToArray());
     }
 
     public List<string> GetPhones() => _phones;
