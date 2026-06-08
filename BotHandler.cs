@@ -63,13 +63,16 @@ public class BotHandler
 
     private async Task HandleGetNumber(long userId, long chatId)
     {
-        var (number, remaining) = await _data.TryIssuePhoneAsync(userId);
-        
-        string response = number == null 
-            ? "😕 База номерів порожня або ліміт вичерпано." 
-            : $"📞 Твій номер: `{number}`\n🔄 Ще {remaining} разів сьогодні";
-            
-        await _bot.SendMessage(chatId, Escape(response), parseMode: ParseMode.MarkdownV2);
+        var number = await _data.GetPhoneAsync();
+
+        string response = number == null
+            ? "😕 База номерів порожня."
+            : $"📞 Твій номер: `{number}`";
+
+        await _bot.SendMessage(
+            chatId,
+            Escape(response),
+            parseMode: ParseMode.MarkdownV2);
     }
 
     private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
