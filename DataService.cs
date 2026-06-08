@@ -1,10 +1,7 @@
-using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
 namespace PhoneBot;
-
-public class UserUsage { public int CountToday { get; set; } public DateTime LastResetDate { get; set; } }
 
 public class DataService
 {
@@ -16,7 +13,7 @@ public class DataService
     private const int DailyLimit = 2;
 
     private List<string> _phones = new();
-    private readonly Dictionary<long, UserUsage> _usages = new();
+    private readonly Dictionary<long, UserUsage> _usages = new(); // UserUsage тепер береться з окремого файлу
 
     public DataService(IConfiguration config, ITelegramBotClient bot)
     {
@@ -26,10 +23,7 @@ public class DataService
         _messageId = int.Parse(config["StateMessageId"]!);
     }
 
-    public async Task InitAsync()
-    {
-        await LoadPhonesAsync();
-    }
+    public async Task InitAsync() => await LoadPhonesAsync();
 
     public async Task LoadPhonesAsync()
     {
@@ -46,7 +40,6 @@ public class DataService
         try
         {
             if (_phones.Count == 0) return (null, 0, false);
-
             var today = DateTime.UtcNow.Date;
             if (!_usages.TryGetValue(userId, out var usage)) usage = new UserUsage { CountToday = 0, LastResetDate = today };
             if (usage.LastResetDate < today) { usage.CountToday = 0; usage.LastResetDate = today; }
@@ -57,9 +50,7 @@ public class DataService
             usage.CountToday++;
             _usages[userId] = usage;
 
-            // Оновлюємо закріплене повідомлення про стан
-            await _bot.EditMessageText(_chatId, _messageId, $"📊 База: {_phones.Count} номерів\n🕒 Останнє оновлення: {DateTime.Now:HH:mm}");
-
+            await _bot.EditMessageText(_chatId, _messageId, $"📊 База: {_phones.Count} номерів\n🕒 Оновлено: {DateTime.Now:HH:mm}");
             return (number, DailyLimit - usage.CountToday, false);
         }
         finally { _lock.Release(); }
