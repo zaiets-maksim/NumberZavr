@@ -1,6 +1,5 @@
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using System.Text.Json;
 using PhoneBot;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,23 +10,14 @@ var botToken = builder.Configuration["BotToken"]
 builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(botToken));
 builder.Services.AddSingleton<DataService>();
 builder.Services.AddSingleton<BotHandler>();
+builder.Services.ConfigureTelegramBotMvc();
 
 var app = builder.Build();
 
-app.MapPost("/webhook", async (HttpContext ctx, BotHandler handler) =>
+app.MapPost("/webhook", async (Update update, BotHandler handler) =>
 {
-    try
-    {
-        var body = await new System.IO.StreamReader(ctx.Request.Body).ReadToEndAsync();
-        Console.WriteLine($"[PhoneBot] Webhook body: {body[..Math.Min(200, body.Length)]}");
-        var update = JsonSerializer.Deserialize<Update>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        if (update is not null)
-            await handler.HandleUpdateAsync(update);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"[PhoneBot] Webhook error: {ex.Message}");
-    }
+    Console.WriteLine($"[PhoneBot] Update: {update.Type}");
+    await handler.HandleUpdateAsync(update);
     return Results.Ok();
 });
 
