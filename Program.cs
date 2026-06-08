@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PhoneBot;
 using Telegram.Bot;
 
@@ -10,9 +11,10 @@ builder.Services.AddSingleton<BotHandler>();
 
 var app = builder.Build();
 
-app.MapPost("/webhook", async (Update update, BotHandler handler) =>
+// Використовуємо JsonElement для стабільності
+app.MapPost("/webhook", async (JsonElement update, BotHandler handler) =>
 {
-    if (update.CallbackQuery != null) await handler.HandleCallbackAsync(update.CallbackQuery);
+    await handler.HandleRawUpdateAsync(update);
     return Results.Ok();
 });
 

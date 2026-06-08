@@ -1,5 +1,4 @@
 using Telegram.Bot;
-using Telegram.Bot.Types;
 
 namespace PhoneBot;
 
@@ -13,7 +12,7 @@ public class DataService
     private const int DailyLimit = 2;
 
     private List<string> _phones = new();
-    private readonly Dictionary<long, UserUsage> _usages = new(); // UserUsage тепер береться з окремого файлу
+    private readonly Dictionary<long, UserUsage> _usages = new();
 
     public DataService(IConfiguration config, ITelegramBotClient bot)
     {
@@ -50,7 +49,7 @@ public class DataService
             usage.CountToday++;
             _usages[userId] = usage;
 
-            await _bot.EditMessageText(_chatId, _messageId, $"📊 База: {_phones.Count} номерів\n🕒 Оновлено: {DateTime.Now:HH:mm}");
+            await _bot.EditMessageText(_chatId, _messageId, $"📊 База: {_phones.Count} номерів\n🕒 Останнє оновлення: {DateTime.Now:HH:mm}");
             return (number, DailyLimit - usage.CountToday, false);
         }
         finally { _lock.Release(); }
