@@ -44,7 +44,15 @@ public class DataService
 
     private static string CleanPhoneNumber(string input)
     {
-        return new string(input.Where(char.IsDigit).ToArray());
+        input = input.Trim();
+
+        bool hasPlus = input.StartsWith("+");
+
+        string digits = new string(input.Where(char.IsDigit).ToArray());
+
+        return hasPlus
+            ? "+" + digits
+            : digits;
     }
 
     public async Task<string?> GetPhoneAsync()
