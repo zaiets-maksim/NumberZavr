@@ -1,6 +1,5 @@
 using PhoneBot;
 using Telegram.Bot;
-using System.Text.Json;
 using Telegram.Bot.Types;
 
 var builder = WebApplication.CreateBuilder(args);
