@@ -32,21 +32,11 @@ public class DataService
 
     public async Task LoadPhonesAsync()
     {
-        try 
-        {
-            var response = await _httpClient.GetAsync(_numbersUrl);
-            if (!response.IsSuccessStatusCode)
-            {
-                Console.WriteLine($"Помилка завантаження бази: {response.StatusCode}");
-                return; // Не падаємо, просто логуємо
-            }
-            var content = await response.Content.ReadAsStringAsync();
-            // ... твій код парсингу ...
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Критична помилка при завантаженні: {ex.Message}");
-        }
+        using var http = new HttpClient();
+        var rawText = await http.GetStringAsync(_numbersUrl);
+        _phones = rawText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                         .Select(s => new string(s.Where(char.IsDigit).ToArray()))
+                         .Where(p => !string.IsNullOrEmpty(p)).Distinct().ToList();
     }
 
     public async Task<(string? number, int remaining, bool limitReached)> TryIssuePhoneAsync(long userId)
