@@ -12,7 +12,10 @@ public class BotHandler
     private readonly DataService _data;
     private readonly long _adminId;
 
-    public BotHandler(ITelegramBotClient bot, DataService data, IConfiguration config)
+    public BotHandler(
+        ITelegramBotClient bot,
+        DataService data,
+        IConfiguration config)
     {
         _bot = bot;
         _data = data;
@@ -23,76 +26,92 @@ public class BotHandler
     {
         if (update.TryGetProperty("message", out var msgElement))
         {
-            var msg = JsonSerializer.Deserialize<Message>(msgElement.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (msg != null) await HandleMessageAsync(msg);
-        }
-        else if (update.TryGetProperty("callback_query", out var cbElement))
-        {
-            var cb = JsonSerializer.Deserialize<CallbackQuery>(cbElement.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (cb != null) await HandleCallbackAsync(cb);
+            var msg = JsonSerializer.Deserialize<Message>(
+                msgElement.GetRawText(),
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+            if (msg != null)
+                await HandleMessageAsync(msg);
         }
     }
 
     private async Task HandleMessageAsync(Message msg)
     {
-        if (msg.Text?.Trim() == "/start")
-        {
-            string text = "👋 Привіт! Натисни Номер, щоб отримати номер телефону.\n📋 Ліміт: 2 рази / 24 год";
-            await _bot.SendMessage(msg.Chat.Id, Escape(text), 
-                parseMode: ParseMode.MarkdownV2, 
-                replyMarkup: MainKeyboard(msg.From?.Id == _adminId));
-        }
-    }
+        if (msg.Text == null)
+            return;
 
-    private async Task HandleCallbackAsync(CallbackQuery cb)
-    {
-        if (cb.Message is null) return;
-        await _bot.AnswerCallbackQuery(cb.Id);
+        var isAdmin = msg.From?.Id == _adminId;
 
-        switch (cb.Data)
+        switch (msg.Text.Trim())
         {
-            case "get_number":
-                await HandleGetNumber(cb.From.Id, cb.Message.Chat.Id);
+            case "/start":
+                await _bot.SendMessage(
+                    msg.Chat.Id,
+                    "👋 Привіт! Натисни кнопку нижче щоб отримати номер.",
+                    replyMarkup: MainKeyboard(isAdmin));
                 break;
-            case "reload_numbers":
+
+            case "📋 Номер":
+                await HandleGetNumber(
+                    msg.From!.Id,
+                    msg.Chat.Id);
+                break;
+
+            case "🔄 Оновити":
+                if (!isAdmin)
+                    return;
+
                 await _data.LoadPhonesAsync();
-                await _bot.SendMessage(cb.Message.Chat.Id, Escape("✅ Номери оновлено!"));
+
+                await _bot.SendMessage(
+                    msg.Chat.Id,
+                    "✅ Номери оновлено.",
+                    replyMarkup: MainKeyboard(true));
                 break;
         }
     }
 
-    private async Task HandleGetNumber(long userId, long chatId)
+    private async Task HandleGetNumber(
+        long userId,
+        long chatId)
     {
         var number = await _data.GetPhoneAsync();
 
         string response = number == null
             ? "😕 База номерів порожня."
-            : $"📞 Твій номер: `{number}`";
+            : $"📞 Твій номер:\n{number}";
 
         await _bot.SendMessage(
             chatId,
-            Escape(response),
-            parseMode: ParseMode.MarkdownV2);
+            response,
+            replyMarkup: MainKeyboard(userId == _adminId));
     }
 
-    private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
+    private static ReplyKeyboardMarkup MainKeyboard(bool isAdmin)
     {
-        var rows = new List<InlineKeyboardButton[]>
+        var rows = new List<KeyboardButton[]>
         {
-            new[] { InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number") }
+            new[]
+            {
+                new KeyboardButton("📋 Номер")
+            }
         };
+
         if (isAdmin)
-            rows.Add(new[] { InlineKeyboardButton.WithCallbackData("🔄 Оновити", "reload_numbers") });
+        {
+            rows.Add(new[]
+            {
+                new KeyboardButton("🔄 Оновити")
+            });
+        }
 
-        return new InlineKeyboardMarkup(rows);
+        return new ReplyKeyboardMarkup(rows)
+        {
+            ResizeKeyboard = true,
+            IsPersistent = true
+        };
     }
-
-    private static string Escape(string s) =>
-        s.Replace("\\", "\\\\").Replace("_", "\\_").Replace("*", "\\*")
-         .Replace("[", "\\[").Replace("]", "\\]").Replace("(", "\\(")
-         .Replace(")", "\\)").Replace("~", "\\~").Replace("`", "\\`")
-         .Replace(">", "\\>").Replace("#", "\\#").Replace("+", "\\+")
-         .Replace("-", "\\-").Replace("=", "\\=").Replace("|", "\\|")
-         .Replace("{", "\\{").Replace("}", "\\}").Replace(".", "\\.")
-         .Replace("!", "\\!"); // Виправлено: додано екранування знаку оклику
 }
