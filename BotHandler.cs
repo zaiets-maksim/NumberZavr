@@ -20,9 +20,10 @@ public class BotHandler
 
     public async Task HandleUpdateAsync(Update update)
     {
-        if (update.Type == UpdateType.Message && update.Message is { } msg)
+        Console.WriteLine($"[PhoneBot] Callback={update.CallbackQuery != null}, Msg={update.Message != null}");
+        if (update.Message is { } msg)
             await HandleMessageAsync(msg);
-        else if (update.Type == UpdateType.CallbackQuery && update.CallbackQuery is { } cb)
+        else if (update.CallbackQuery is { } cb)
             await HandleCallbackAsync(cb);
     }
 
