@@ -20,8 +20,7 @@ public class BotHandler
         if (msg.Text == "/start")
         {
             var keyboard = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("Отримати номер", "get_number"));
-            // Фікс: прибрано Async суфікс
-            await _bot.SendMessage(msg.Chat.Id, "Бот готовий. Натисни кнопку:", replyMarkup: keyboard);
+            await _bot.SendMessageAsync(msg.Chat.Id, "Бот готовий. Натисни кнопку:", replyMarkup: keyboard);
         }
     }
 
@@ -31,8 +30,7 @@ public class BotHandler
         {
             var (number, _) = await _data.TryIssuePhoneAsync(cb.From.Id);
             string text = number != null ? $"Твій номер: `{number}`" : "База порожня";
-            // Фікс: прибрано Async суфікс
-            await _bot.AnswerCallbackQuery(cb.Id, text, showAlert: true);
+            await _bot.AnswerCallbackQueryAsync(cb.Id, text, showAlert: true);
         }
     }
 }
