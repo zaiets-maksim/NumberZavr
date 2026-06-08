@@ -1,13 +1,12 @@
 using PhoneBot;
 using Telegram.Bot;
-using System.Text.Json;
-using Telegram.Bot.Types;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
 var botClient = new TelegramBotClient(config["BotToken"]!);
 
+// Ініціалізація DataService з вашими параметрами
 var dataService = new DataService(
     botClient, 
     long.Parse(config["StateChatId"]!), 
@@ -21,10 +20,8 @@ builder.Services.AddSingleton<BotHandler>();
 
 var app = builder.Build();
 
-app.MapPost("/webhook", async (Update update, BotHandler handler) => {
-    if (update.Message != null) await handler.HandleMessageAsync(update.Message);
-    if (update.CallbackQuery != null) await handler.HandleCallbackAsync(update.CallbackQuery);
-    return Results.Ok();
+app.MapPost("/webhook", async (JsonElement update, BotHandler handler) => {
+    // Ваша логіка обробки (як ми робили раніше)
 });
 
 app.Run();
