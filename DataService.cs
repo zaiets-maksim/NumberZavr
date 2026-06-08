@@ -1,4 +1,5 @@
 using Telegram.Bot;
+using Telegram.Bot.Types;
 
 namespace PhoneBot;
 
@@ -20,15 +21,14 @@ public class DataService
 
     public async Task InitializeAsync(string numbersUrl)
     {
-        // 1. Завантажуємо список номерів
         using var http = new HttpClient();
         var raw = await http.GetStringAsync(numbersUrl);
         _phones = raw.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(s => new string(s.Where(char.IsDigit).ToArray()))
             .Distinct().ToList();
 
-        // 2. Підтягуємо поточний прогрес з Telegram
-        var msg = await _bot.GetMessage(_chatId, _messageId);
+        // У версії 22.0+ метод має суфікс Async
+        var msg = await _bot.GetMessageAsync(_chatId, _messageId);
         if (msg.Text != null && msg.Text.StartsWith("State: "))
         {
             _globalCounter = int.Parse(msg.Text.Replace("State: ", ""));
@@ -42,12 +42,11 @@ public class DataService
         {
             if (_phones.Count == 0) return (null, 0);
 
-            // Отримуємо номер по черзі
             string number = _phones[_globalCounter % _phones.Count];
             _globalCounter++;
 
-            // Оновлюємо стан у повідомленні
-            await _bot.EditMessageText(_chatId, _messageId, $"State: {_globalCounter}");
+            // Оновлюємо стан через EditMessageTextAsync
+            await _bot.EditMessageTextAsync(_chatId, _messageId, $"State: {_globalCounter}");
 
             return (number, 2); 
         }
