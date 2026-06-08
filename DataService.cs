@@ -27,8 +27,7 @@ public class DataService
             .Select(s => new string(s.Where(char.IsDigit).ToArray()))
             .Distinct().ToList();
 
-        // У v22 ми використовуємо GetMessage, який повертає об'єкт
-        var msg = await _bot.GetMessage(_chatId, _messageId);
+        var msg = await _bot.GetApi().GetMessage(_chatId, _messageId);
         if (msg?.Text != null && msg.Text.StartsWith("State: "))
         {
             _globalCounter = int.Parse(msg.Text.Replace("State: ", ""));
@@ -45,8 +44,7 @@ public class DataService
             string number = _phones[_globalCounter % _phones.Count];
             _globalCounter++;
 
-            // Використовуємо EditMessageText (без Async)
-            await _bot.EditMessageText(_chatId, _messageId, $"State: {_globalCounter}");
+            await _bot.GetApi().EditMessageText(_chatId, _messageId, $"State: {_globalCounter}");
 
             return (number, 2); 
         }
