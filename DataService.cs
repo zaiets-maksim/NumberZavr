@@ -16,16 +16,10 @@ public class DataService
 
     public DataService(IConfiguration config, ITelegramBotClient bot)
     {
+        _numbersUrl = config["NumbersUrl"]!;
         _bot = bot;
-    
-        // Перевірка на null з детальним повідомленням
-        var chatStr = config["StateChatId"] ?? throw new InvalidOperationException("StateChatId is NOT set in environment variables!");
-        var msgStr = config["StateMessageId"] ?? throw new InvalidOperationException("StateMessageId is NOT set in environment variables!");
-
-        _chatId = long.Parse(chatStr);
-        _messageId = int.Parse(msgStr);
-    
-        _numbersUrl = config["NumbersUrl"] ?? throw new InvalidOperationException("NumbersUrl is NOT set!");
+        _chatId = long.Parse(config["StateChatId"]!);
+        _messageId = int.Parse(config["StateMessageId"]!);
     }
 
     public async Task InitAsync() => await LoadPhonesAsync();
