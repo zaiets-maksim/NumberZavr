@@ -11,9 +11,6 @@ public class BotHandler
     private readonly DataService _data;
     private readonly long _adminId;
 
-    // States for admin add/remove flows
-    private static readonly Dictionary<long, string> _pendingAction = new();
-
     public BotHandler(ITelegramBotClient bot, DataService data, IConfiguration config)
     {
         _bot = bot;
@@ -29,40 +26,12 @@ public class BotHandler
             await HandleCallbackAsync(cb);
     }
 
-    // ── Messages ─────────────────────────────────────────────────────────────
-
     private async Task HandleMessageAsync(Message msg)
     {
         if (msg.From is null) return;
         long userId = msg.From.Id;
         long chatId = msg.Chat.Id;
         string text = msg.Text?.Trim() ?? "";
-
-        // Admin is in "add phone" flow
-        if (_pendingAction.TryGetValue(userId, out var action))
-        {
-            _pendingAction.Remove(userId);
-            if (action == "add")
-            {
-                bool added = await _data.AddPhoneAsync(text);
-                string reply = added
-                    ? $"✅ Номер *{Escape(text)}* додано\\."
-                    : $"⚠️ Номер *{Escape(text)}* вже є в базі\\.";
-                await _bot.SendMessage(chatId, reply, parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: MainKeyboard(isAdmin: true));
-                return;
-            }
-            if (action == "remove")
-            {
-                bool removed = await _data.RemovePhoneAsync(text);
-                string reply = removed
-                    ? $"🗑️ Номер *{Escape(text)}* видалено\\."
-                    : $"⚠️ Номер *{Escape(text)}* не знайдено в базі\\.";
-                await _bot.SendMessage(chatId, reply, parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: MainKeyboard(isAdmin: true));
-                return;
-            }
-        }
 
         if (text is "/start" or "/menu")
         {
@@ -73,8 +42,6 @@ public class BotHandler
                 replyMarkup: MainKeyboard(isAdmin));
         }
     }
-
-    // ── Callbacks ─────────────────────────────────────────────────────────────
 
     private async Task HandleCallbackAsync(CallbackQuery cb)
     {
@@ -91,61 +58,19 @@ public class BotHandler
                 await HandleGetNumber(userId, chatId);
                 break;
 
-            case "settings":
-                if (!isAdmin)
-                {
-                    await _bot.SendMessage(chatId, "🚫 Доступ заборонено\\.", parseMode: ParseMode.MarkdownV2);
-                    return;
-                }
-                await _bot.SendMessage(chatId, "⚙️ *Налаштування*\nОберіть дію:",
-                    parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: SettingsKeyboard());
-                break;
-
-            case "settings_add":
+            case "reload_numbers":
                 if (!isAdmin) return;
-                _pendingAction[userId] = "add";
+                await _data.LoadPhonesAsync();
+                int count = _data.GetPhones().Count;
                 await _bot.SendMessage(chatId,
-                    "📝 Введи номер телефону, який хочеш додати:\n_Формат: \\+380501234567_",
+                    $"🔄 Номери оновлено\\! Зараз в базі: *{count}* номерів\\.",
                     parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: new ForceReplyMarkup());
-                break;
-
-            case "settings_remove":
-                if (!isAdmin) return;
-                var phones = _data.GetPhones();
-                if (phones.Count == 0)
-                {
-                    await _bot.SendMessage(chatId, "📭 База номерів порожня\\.",
-                        parseMode: ParseMode.MarkdownV2);
-                    return;
-                }
-                // Show list as inline buttons
-                var rows = phones.Select(p =>
-                    new[] { InlineKeyboardButton.WithCallbackData(p.Number, $"delete_{p.Number}") }
-                ).ToList();
-                rows.Add([InlineKeyboardButton.WithCallbackData("◀ Назад", "back")]);
-                await _bot.SendMessage(chatId, "🗑️ Обери номер для видалення:",
-                    replyMarkup: new InlineKeyboardMarkup(rows));
+                    replyMarkup: MainKeyboard(isAdmin: true));
                 break;
 
             case "back":
                 await _bot.SendMessage(chatId, "🏠 Головне меню",
                     replyMarkup: MainKeyboard(isAdmin));
-                break;
-
-            default:
-                if (cb.Data?.StartsWith("delete_") == true)
-                {
-                    if (!isAdmin) return;
-                    string num = cb.Data["delete_".Length..];
-                    bool removed = await _data.RemovePhoneAsync(num);
-                    string reply = removed
-                        ? $"🗑️ Номер *{Escape(num)}* видалено\\."
-                        : $"⚠️ Номер *{Escape(num)}* не знайдено\\.";
-                    await _bot.SendMessage(chatId, reply, parseMode: ParseMode.MarkdownV2,
-                        replyMarkup: MainKeyboard(isAdmin: true));
-                }
                 break;
         }
     }
@@ -158,7 +83,7 @@ public class BotHandler
         {
             bool noPhones = _data.GetPhones().Count == 0;
             string msg = noPhones
-                ? "😕 База номерів порожня\\. Зверніться до адміністратора\\."
+                ? "😕 База номерів порожня\\."
                 : "⏳ Ти вже отримав свій ліміт номерів сьогодні\\.\n_Повертайся завтра\\!_";
             await _bot.SendMessage(chatId, msg, parseMode: ParseMode.MarkdownV2);
             return;
@@ -168,36 +93,23 @@ public class BotHandler
             ? "❌ Ліміт вичерпано на сьогодні"
             : $"🔄 Ще {remaining} раз сьогодні";
 
-        // Phone number as code block — tap to copy on mobile
-        string reply = $"📞 Твій номер:\n\n`{Escape(number)}`\n\n_{remainingText}_";
-        await _bot.SendMessage(chatId, reply, parseMode: ParseMode.MarkdownV2);
+        await _bot.SendMessage(chatId,
+            $"📞 Твій номер:\n\n`{Escape(number)}`\n\n_{remainingText}_",
+            parseMode: ParseMode.MarkdownV2);
     }
-
-    // ── Keyboards ─────────────────────────────────────────────────────────────
 
     private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
     {
-        var row = new List<InlineKeyboardButton>
+        var rows = new List<InlineKeyboardButton[]>
         {
-            InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number")
+            [InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number")]
         };
         if (isAdmin)
-            row.Add(InlineKeyboardButton.WithCallbackData("⚙️ Налаштування", "settings"));
+            rows.Add([InlineKeyboardButton.WithCallbackData("🔄 Оновити номери з файлу", "reload_numbers")]);
 
-        return new InlineKeyboardMarkup([row]);
+        return new InlineKeyboardMarkup(rows);
     }
 
-    private static InlineKeyboardMarkup SettingsKeyboard() =>
-        new InlineKeyboardMarkup(new[]
-        {
-            new[] { InlineKeyboardButton.WithCallbackData("➕ Додати номер",  "settings_add") },
-            new[] { InlineKeyboardButton.WithCallbackData("➖ Видалити номер", "settings_remove") },
-            new[] { InlineKeyboardButton.WithCallbackData("◀ Назад",         "back") }
-        });
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    // Escape special chars for MarkdownV2
     private static string Escape(string s) =>
         s.Replace("\\", "\\\\").Replace("_", "\\_").Replace("*", "\\*")
          .Replace("[", "\\[").Replace("]", "\\]").Replace("(", "\\(")

@@ -1,98 +1,118 @@
 using System.Text.Json;
+using Telegram.Bot;
+using Telegram.Bot.Types.Enums;
 
 namespace PhoneBot;
 
+// Stores per-user daily limits as a JSON string in a pinned Telegram group message
 public class DataService
 {
-    private readonly string _filePath;
-    private static readonly JsonSerializerOptions _opts = new() { WriteIndented = true };
-    private BotData _data = new();
+    private readonly ITelegramBotClient _bot;
+    private readonly long _groupId;
+    private int _pinnedMessageId;
+    private readonly string _numbersUrl;
     private readonly SemaphoreSlim _lock = new(1, 1);
-
-    public DataService(IConfiguration config)
-    {
-        _filePath = config["DataFilePath"] ?? "data.json";
-        Load();
-    }
-
-    private void Load()
-    {
-        if (!File.Exists(_filePath))
-        {
-            _data = new BotData();
-            Save();
-            return;
-        }
-        var json = File.ReadAllText(_filePath);
-        _data = JsonSerializer.Deserialize<BotData>(json) ?? new BotData();
-    }
-
-    private void Save()
-    {
-        var json = JsonSerializer.Serialize(_data, _opts);
-        File.WriteAllText(_filePath, json);
-    }
-
-    // ── Phones ──────────────────────────────────────────────────────────────
-
-    public List<PhoneRecord> GetPhones() => _data.Phones;
-
-    public async Task<bool> AddPhoneAsync(string number)
-    {
-        await _lock.WaitAsync();
-        try
-        {
-            number = number.Trim();
-            if (_data.Phones.Any(p => p.Number == number))
-                return false;
-            _data.Phones.Add(new PhoneRecord { Number = number });
-            Save();
-            return true;
-        }
-        finally { _lock.Release(); }
-    }
-
-    public async Task<bool> RemovePhoneAsync(string number)
-    {
-        await _lock.WaitAsync();
-        try
-        {
-            number = number.Trim();
-            var phone = _data.Phones.FirstOrDefault(p => p.Number == number);
-            if (phone is null) return false;
-            _data.Phones.Remove(phone);
-            Save();
-            return true;
-        }
-        finally { _lock.Release(); }
-    }
-
-    // ── Usage tracking ───────────────────────────────────────────────────────
+    private static readonly JsonSerializerOptions _opts = new() { WriteIndented = false };
 
     private const int DailyLimit = 2;
 
-    /// <summary>
-    /// Returns the next phone number for this user, respecting daily limit.
-    /// Returns null if limit reached or no phones in DB.
-    /// </summary>
+    // In-memory cache of limits: userId -> (count, date)
+    private Dictionary<long, UserUsage> _usages = new();
+    // In-memory list of phone numbers (read from GitHub)
+    private List<string> _phones = new();
+
+    public DataService(ITelegramBotClient bot, IConfiguration config)
+    {
+        _bot = bot;
+        _groupId = long.Parse(config["GroupId"] ?? throw new Exception("GroupId not configured"));
+        _pinnedMessageId = int.Parse(config["PinnedMessageId"] ?? "0");
+        _numbersUrl = config["NumbersUrl"] ?? throw new Exception("NumbersUrl not configured");
+    }
+
+    // Call once on startup
+    public async Task InitAsync()
+    {
+        await LoadPhonesAsync();
+        await LoadLimitsAsync();
+    }
+
+    // ── Phones (read-only from GitHub raw txt) ────────────────────────────────
+
+    public async Task LoadPhonesAsync()
+    {
+        using var http = new HttpClient();
+        var text = await http.GetStringAsync(_numbersUrl);
+        _phones = text.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                      .Select(l => l.Trim())
+                      .Where(l => l.Length > 0)
+                      .ToList();
+    }
+
+    public List<string> GetPhones() => _phones;
+
+    // ── Limits (read/write via pinned Telegram message) ───────────────────────
+
+    private async Task LoadLimitsAsync()
+    {
+        try
+        {
+            // Try to get pinned message from group
+            var chat = await _bot.GetChat(_groupId);
+            if (chat.PinnedMessage is { } pinned)
+            {
+                _pinnedMessageId = pinned.MessageId;
+                var json = pinned.Text ?? "{}";
+                _usages = JsonSerializer.Deserialize<Dictionary<long, UserUsage>>(json) ?? new();
+                return;
+            }
+        }
+        catch { }
+
+        // No pinned message found — create one
+        if (_pinnedMessageId == 0)
+        {
+            var msg = await _bot.SendMessage(_groupId, "{}");
+            _pinnedMessageId = msg.MessageId;
+            await _bot.PinChatMessage(_groupId, _pinnedMessageId);
+        }
+
+        _usages = new();
+    }
+
+    private async Task SaveLimitsAsync()
+    {
+        var json = JsonSerializer.Serialize(_usages, _opts);
+        try
+        {
+            await _bot.EditMessageText(_groupId, _pinnedMessageId, json);
+        }
+        catch
+        {
+            // If message doesn't exist, create new pinned
+            var msg = await _bot.SendMessage(_groupId, json);
+            _pinnedMessageId = msg.MessageId;
+            await _bot.PinChatMessage(_groupId, _pinnedMessageId);
+        }
+    }
+
+    // ── Issue phone ───────────────────────────────────────────────────────────
+
     public async Task<(string? number, int remaining)> TryIssuePhoneAsync(long userId)
     {
         await _lock.WaitAsync();
         try
         {
-            if (_data.Phones.Count == 0)
+            if (_phones.Count == 0)
                 return (null, 0);
 
             var today = DateTime.UtcNow.Date;
-            var usage = _data.UserUsages.FirstOrDefault(u => u.UserId == userId);
 
-            if (usage is null)
+            if (!_usages.TryGetValue(userId, out var usage))
             {
-                usage = new UserUsage { UserId = userId, LastResetDate = today };
-                _data.UserUsages.Add(usage);
+                usage = new UserUsage { CountToday = 0, LastResetDate = today };
+                _usages[userId] = usage;
             }
 
-            // Reset counter if a new day
             if (usage.LastResetDate < today)
             {
                 usage.CountToday = 0;
@@ -102,18 +122,15 @@ public class DataService
             if (usage.CountToday >= DailyLimit)
                 return (null, 0);
 
-            // Round-robin: pick phone with least total issued
-            var phone = _data.Phones
-                .OrderBy(p => p.TotalIssued)
-                .ThenBy(_ => Guid.NewGuid()) // tie-break randomly
-                .First();
+            // Round-robin by index
+            int idx = (int)(userId % _phones.Count);
+            var number = _phones[idx];
 
-            phone.TotalIssued++;
             usage.CountToday++;
-
             int remaining = DailyLimit - usage.CountToday;
-            Save();
-            return (phone.Number, remaining);
+
+            await SaveLimitsAsync();
+            return (number, remaining);
         }
         finally { _lock.Release(); }
     }
