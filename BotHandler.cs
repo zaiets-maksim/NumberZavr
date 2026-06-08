@@ -21,7 +21,6 @@ public class BotHandler
 
     public async Task HandleRawUpdateAsync(JsonElement update)
     {
-        // Ручний парсинг замість довіри до вбудованого мапінгу
         if (update.TryGetProperty("message", out var msgElement))
         {
             var msg = JsonSerializer.Deserialize<Message>(msgElement.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -60,5 +59,22 @@ public class BotHandler
         }
     }
 
-    // ... (решта методів: HandleGetNumber, MainKeyboard, Escape без змін)
+    private async Task HandleGetNumber(long userId, long chatId)
+    {
+        var (number, remaining) = await _data.TryIssuePhoneAsync(userId);
+        // ... ваш код видачі номера ...
+        await _bot.SendMessage(chatId, $"📞 Твій номер: {number}");
+    }
+
+    private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
+    {
+        var rows = new List<InlineKeyboardButton[]>
+        {
+            new[] { InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number") }
+        };
+        if (isAdmin)
+            rows.Add(new[] { InlineKeyboardButton.WithCallbackData("🔄 Оновити", "reload_numbers") });
+
+        return new InlineKeyboardMarkup(rows);
+    }
 }
