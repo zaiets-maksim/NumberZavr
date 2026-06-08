@@ -5,7 +5,6 @@ using Telegram.Bot.Types;
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
-// Ініціалізація клієнта
 var botClient = new TelegramBotClient(config["BotToken"]!);
 
 var dataService = new DataService(
