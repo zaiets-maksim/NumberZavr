@@ -1,29 +1,20 @@
 using System.Text.Json;
-using Telegram.Bot;
-using Telegram.Bot.Types;
 
 namespace PhoneBot;
-
-public class UserUsage { public int CountToday { get; set; } public DateTime LastResetDate { get; set; } }
 
 public class DataService
 {
     private readonly string _numbersUrl;
-    private readonly ITelegramBotClient _bot;
-    private readonly long _chatId;
-    private readonly int _messageId;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private const int DailyLimit = 2;
 
     private List<string> _phones = new();
+    // In-memory limits — reset on restart
     private readonly Dictionary<long, UserUsage> _usages = new();
 
-    public DataService(IConfiguration config, ITelegramBotClient bot)
+    public DataService(IConfiguration config)
     {
-        _numbersUrl = config["NumbersUrl"]!;
-        _bot = bot;
-        _chatId = long.Parse(config["StateChatId"]!);
-        _messageId = int.Parse(config["StateMessageId"]!);
+        _numbersUrl = config["NumbersUrl"] ?? throw new Exception("NumbersUrl not configured");
     }
 
     public async Task InitAsync()
@@ -35,32 +26,55 @@ public class DataService
     {
         using var http = new HttpClient();
         var rawText = await http.GetStringAsync(_numbersUrl);
+    
         _phones = rawText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                         .Select(s => new string(s.Where(char.IsDigit).ToArray()))
-                         .Where(p => !string.IsNullOrEmpty(p)).Distinct().ToList();
+            .Select(CleanPhoneNumber)
+            .Where(phone => !string.IsNullOrEmpty(phone))
+            .Distinct() // Щоб уникнути дублікатів
+            .ToList();
+                     
+        Console.WriteLine($"[PhoneBot] Loaded {_phones.Count} phones");
+    }
+    
+    private string CleanPhoneNumber(string input)
+    {
+        return new string(input.Where(char.IsDigit).ToArray());
     }
 
-    public async Task<(string? number, int remaining, bool limitReached)> TryIssuePhoneAsync(long userId)
+    public List<string> GetPhones() => _phones;
+
+    public async Task<(string? number, int remaining)> TryIssuePhoneAsync(long userId)
     {
         await _lock.WaitAsync();
         try
         {
-            if (_phones.Count == 0) return (null, 0, false);
+            if (_phones.Count == 0)
+                return (null, 0);
 
             var today = DateTime.UtcNow.Date;
-            if (!_usages.TryGetValue(userId, out var usage)) usage = new UserUsage { CountToday = 0, LastResetDate = today };
-            if (usage.LastResetDate < today) { usage.CountToday = 0; usage.LastResetDate = today; }
 
-            if (usage.CountToday >= DailyLimit) return (null, 0, true);
+            if (!_usages.TryGetValue(userId, out var usage))
+            {
+                usage = new UserUsage { CountToday = 0, LastResetDate = today };
+                _usages[userId] = usage;
+            }
 
-            var number = _phones[(int)(userId % _phones.Count)];
+            if (usage.LastResetDate < today)
+            {
+                usage.CountToday = 0;
+                usage.LastResetDate = today;
+            }
+
+            if (usage.CountToday >= DailyLimit)
+                return (null, 0);
+
+            // Round-robin
+            int idx = (int)(userId % _phones.Count);
+            var number = _phones[idx];
+
             usage.CountToday++;
-            _usages[userId] = usage;
-
-            // Оновлюємо закріплене повідомлення про стан
-            await _bot.EditMessageText(_chatId, _messageId, $"📊 База: {_phones.Count} номерів\n🕒 Останнє оновлення: {DateTime.Now:HH:mm}");
-
-            return (number, DailyLimit - usage.CountToday, false);
+            int remaining = DailyLimit - usage.CountToday;
+            return (number, remaining);
         }
         finally { _lock.Release(); }
     }
