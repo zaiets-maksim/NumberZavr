@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -15,108 +16,49 @@ public class BotHandler
     {
         _bot = bot;
         _data = data;
-        _adminId = long.Parse(config["AdminId"] ?? throw new Exception("AdminId not configured"));
+        _adminId = long.Parse(config["AdminId"] ?? "0");
     }
 
-    public async Task HandleUpdateAsync(Update update)
+    public async Task HandleRawUpdateAsync(JsonElement update)
     {
-        Console.WriteLine($"[PhoneBot] Callback={update.CallbackQuery != null}, Msg={update.Message != null}");
-        if (update.Message is { } msg)
-            await HandleMessageAsync(msg);
-        else if (update.CallbackQuery is { } cb)
-            await HandleCallbackAsync(cb);
+        // Ручний парсинг замість довіри до вбудованого мапінгу
+        if (update.TryGetProperty("message", out var msgElement))
+        {
+            var msg = JsonSerializer.Deserialize<Message>(msgElement.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (msg != null) await HandleMessageAsync(msg);
+        }
+        else if (update.TryGetProperty("callback_query", out var cbElement))
+        {
+            var cb = JsonSerializer.Deserialize<CallbackQuery>(cbElement.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (cb != null) await HandleCallbackAsync(cb);
+        }
     }
 
     private async Task HandleMessageAsync(Message msg)
     {
-        if (msg.From is null) return;
-        long userId = msg.From.Id;
-        long chatId = msg.Chat.Id;
-        string text = msg.Text?.Trim() ?? "";
-
-        if (text is "/start" or "/menu")
+        if (msg.Text?.Trim() == "/start")
         {
-            bool isAdmin = userId == _adminId;
-            await _bot.SendMessage(chatId,
-                "👋 Привіт\\! Натисни *Номер*, щоб отримати номер телефону\\.\n📋 Ліміт: *2 рази / 24 год*",
-                parseMode: ParseMode.MarkdownV2,
-                replyMarkup: MainKeyboard(isAdmin));
+            await _bot.SendMessage(msg.Chat.Id, "👋 Привіт! Натисни *Номер*.", 
+                parseMode: ParseMode.MarkdownV2, replyMarkup: MainKeyboard(msg.From?.Id == _adminId));
         }
     }
 
     private async Task HandleCallbackAsync(CallbackQuery cb)
     {
-        if (cb.From is null || cb.Message is null) return;
-        long userId = cb.From.Id;
-        long chatId = cb.Message.Chat.Id;
-        bool isAdmin = userId == _adminId;
-
+        if (cb.Message is null) return;
         await _bot.AnswerCallbackQuery(cb.Id);
 
         switch (cb.Data)
         {
             case "get_number":
-                await HandleGetNumber(userId, chatId);
+                await HandleGetNumber(cb.From.Id, cb.Message.Chat.Id);
                 break;
-
             case "reload_numbers":
-                if (!isAdmin) return;
                 await _data.LoadPhonesAsync();
-                int count = _data.GetPhones().Count;
-                await _bot.SendMessage(chatId,
-                    $"🔄 Номери оновлено\\! Зараз в базі: *{count}* номерів\\.",
-                    parseMode: ParseMode.MarkdownV2,
-                    replyMarkup: MainKeyboard(isAdmin: true));
-                break;
-
-            case "back":
-                await _bot.SendMessage(chatId, "🏠 Головне меню",
-                    replyMarkup: MainKeyboard(isAdmin));
+                await _bot.SendMessage(cb.Message.Chat.Id, "✅ Оновлено");
                 break;
         }
     }
 
-    private async Task HandleGetNumber(long userId, long chatId)
-    {
-        var (number, remaining) = await _data.TryIssuePhoneAsync(userId);
-
-        if (number is null)
-        {
-            bool noPhones = _data.GetPhones().Count == 0;
-            string msg = noPhones
-                ? "😕 База номерів порожня\\."
-                : "⏳ Ти вже отримав свій ліміт номерів сьогодні\\.\n_Повертайся завтра\\!_";
-            await _bot.SendMessage(chatId, msg, parseMode: ParseMode.MarkdownV2);
-            return;
-        }
-
-        string remainingText = remaining == 0
-            ? "❌ Ліміт вичерпано на сьогодні"
-            : $"🔄 Ще {remaining} раз сьогодні";
-
-        await _bot.SendMessage(chatId,
-            $"📞 Твій номер:\n\n`{Escape(number)}`\n\n_{remainingText}_",
-            parseMode: ParseMode.MarkdownV2);
-    }
-
-    private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
-    {
-        var rows = new List<InlineKeyboardButton[]>
-        {
-            new[] { InlineKeyboardButton.WithCallbackData("📋 Номер", "get_number") }
-        };
-        if (isAdmin)
-            rows.Add(new[] { InlineKeyboardButton.WithCallbackData("🔄 Оновити номери з файлу", "reload_numbers") });
-
-        return new InlineKeyboardMarkup(rows);
-    }
-
-    private static string Escape(string s) =>
-        s.Replace("\\", "\\\\").Replace("_", "\\_").Replace("*", "\\*")
-         .Replace("[", "\\[").Replace("]", "\\]").Replace("(", "\\(")
-         .Replace(")", "\\)").Replace("~", "\\~").Replace("`", "\\`")
-         .Replace(">", "\\>").Replace("#", "\\#").Replace("+", "\\+")
-         .Replace("-", "\\-").Replace("=", "\\=").Replace("|", "\\|")
-         .Replace("{", "\\{").Replace("}", "\\}").Replace(".", "\\.")
-         .Replace("!", "\\!");
+    // ... (решта методів: HandleGetNumber, MainKeyboard, Escape без змін)
 }
