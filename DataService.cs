@@ -27,9 +27,7 @@ public class DataService
             .Select(s => new string(s.Where(char.IsDigit).ToArray()))
             .Distinct().ToList();
 
-        // ВИКЛИКАЄМО БЕЗПОСЕРЕДНЬО
-        var msg = await _bot.GetMessage(_chatId, _messageId);
-        
+        var msg = await _bot.GetApi().GetMessage(_chatId, _messageId);
         if (msg?.Text != null && msg.Text.StartsWith("State: "))
         {
             _globalCounter = int.Parse(msg.Text.Replace("State: ", ""));
@@ -42,11 +40,11 @@ public class DataService
         try
         {
             if (_phones.Count == 0) return (null, 0);
+
             string number = _phones[_globalCounter % _phones.Count];
             _globalCounter++;
 
-            // ВИКЛИКАЄМО БЕЗПОСЕРЕДНЬО
-            await _bot.EditMessageText(_chatId, _messageId, $"State: {_globalCounter}");
+            await _bot.GetApi().EditMessageText(_chatId, _messageId, $"State: {_globalCounter}");
 
             return (number, 2); 
         }
