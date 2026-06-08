@@ -37,8 +37,10 @@ public class BotHandler
     {
         if (msg.Text?.Trim() == "/start")
         {
-            await _bot.SendMessage(msg.Chat.Id, "👋 Привіт! Натисни *Номер*.", 
-                parseMode: ParseMode.MarkdownV2, replyMarkup: MainKeyboard(msg.From?.Id == _adminId));
+            string text = "👋 Привіт! Натисни Номер, щоб отримати номер телефону.\n📋 Ліміт: 2 рази / 24 год";
+            await _bot.SendMessage(msg.Chat.Id, Escape(text), 
+                parseMode: ParseMode.MarkdownV2, 
+                replyMarkup: MainKeyboard(msg.From?.Id == _adminId));
         }
     }
 
@@ -54,7 +56,7 @@ public class BotHandler
                 break;
             case "reload_numbers":
                 await _data.LoadPhonesAsync();
-                await _bot.SendMessage(cb.Message.Chat.Id, "✅ Оновлено");
+                await _bot.SendMessage(cb.Message.Chat.Id, Escape("✅ Номери оновлено!"));
                 break;
         }
     }
@@ -62,8 +64,12 @@ public class BotHandler
     private async Task HandleGetNumber(long userId, long chatId)
     {
         var (number, remaining) = await _data.TryIssuePhoneAsync(userId);
-        // ... ваш код видачі номера ...
-        await _bot.SendMessage(chatId, $"📞 Твій номер: {number}");
+        
+        string response = number == null 
+            ? "😕 База номерів порожня або ліміт вичерпано." 
+            : $"📞 Твій номер: `{number}`\n🔄 Ще {remaining} разів сьогодні";
+            
+        await _bot.SendMessage(chatId, Escape(response), parseMode: ParseMode.MarkdownV2);
     }
 
     private static InlineKeyboardMarkup MainKeyboard(bool isAdmin)
@@ -77,4 +83,13 @@ public class BotHandler
 
         return new InlineKeyboardMarkup(rows);
     }
+
+    private static string Escape(string s) =>
+        s.Replace("\\", "\\\\").Replace("_", "\\_").Replace("*", "\\*")
+         .Replace("[", "\\[").Replace("]", "\\]").Replace("(", "\\(")
+         .Replace(")", "\\)").Replace("~", "\\~").Replace("`", "\\`")
+         .Replace(">", "\\>").Replace("#", "\\#").Replace("+", "\\+")
+         .Replace("-", "\\-").Replace("=", "\\=").Replace("|", "\\|")
+         .Replace("{", "\\{").Replace("}", "\\}").Replace(".", "\\.")
+         .Replace("!", "\\!"); // Виправлено: додано екранування знаку оклику
 }
