@@ -78,6 +78,7 @@ public class LifetimeEventsHostedService : IHostedService
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly ITelegramBotClient _bot;
     private readonly DataService _data;
+    private Timer? _shutdownTimer;
 
     public LifetimeEventsHostedService(
         IHostApplicationLifetime appLifetime,
@@ -93,10 +94,34 @@ public class LifetimeEventsHostedService : IHostedService
     {
         _appLifetime.ApplicationStarted.Register(OnStarted);
         _appLifetime.ApplicationStopping.Register(OnStopping);
+        ScheduleShutdown();
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _shutdownTimer?.Dispose();
+        return Task.CompletedTask;
+    }
+
+    private void ScheduleShutdown()
+    {
+        var kyivTz = TimeZoneInfo.FindSystemTimeZoneById("Europe/Kiev");
+        var nowKyiv = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, kyivTz);
+
+        var targetToday = nowKyiv.Date.AddHours(20); // 20:00 сьогодні
+        var nextShutdown = nowKyiv < targetToday ? targetToday : targetToday.AddDays(1);
+
+        var delay = nextShutdown - nowKyiv;
+
+        Console.WriteLine($"[SHUTDOWN] Scheduled at {nextShutdown:yyyy-MM-dd HH:mm} Kyiv (in {delay.TotalMinutes:F0} min)");
+
+        _shutdownTimer = new Timer(_ =>
+        {
+            Console.WriteLine("[SHUTDOWN] 20:00 Kyiv — shutting down...");
+            _appLifetime.StopApplication();
+        }, null, delay, Timeout.InfiniteTimeSpan);
+    }
 
     private void OnStarted()
     {
