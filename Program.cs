@@ -6,16 +6,18 @@ using NumberZavr;
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration(config =>
     {
-        config.AddJsonFile("appsettings.json", optional: false);
+        config.AddJsonFile("appsettings.json", optional: true);
     })
     .ConfigureServices((context, services) =>
     {
         var cfg = context.Configuration;
 
+        var owner = cfg["GitHubOwner"];
+        var repo = cfg["GitHubRepo"];
+
         var github = new GitHubStateService(
-            cfg["GitHubOwner"],
-            cfg["GitHubRepo"],
-            cfg["GitHubToken"]
+            owner,
+            repo
         );
 
         services.AddSingleton(github);
