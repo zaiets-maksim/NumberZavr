@@ -1,84 +1,111 @@
-namespace PhoneBot;
+using PhoneBot;
+
+namespace NumberZavr;
 
 public class DataService
 {
-    private readonly string _numbersUrl;
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private const string PhonesFile = "data.txt";
+    private const int MaxUsage = 1;
 
     private List<string> _phones = new();
 
-    private int _currentPhoneIndex;
-    private int _currentPhoneUsage;
+    private int _index;
+    private int _usage;
 
-    private const int MaxUsagePerPhone = 2;
+    private readonly object _lock = new();
 
-    public DataService(IConfiguration config)
+    private readonly GitHubStateService _github;
+
+    private string _lastSha = "";
+
+    private BotState _cache = new();
+
+    public DataService(GitHubStateService github)
     {
-        _numbersUrl = config["NumbersUrl"]
-                      ?? throw new Exception("NumbersUrl not configured");
+        _github = github;
     }
 
     public async Task InitAsync()
     {
         await LoadPhonesAsync();
+        await LoadStateAsync();
     }
 
     public async Task LoadPhonesAsync()
     {
-        using var http = new HttpClient();
+        var raw = await File.ReadAllTextAsync(PhonesFile);
 
-        var rawText = await http.GetStringAsync(_numbersUrl);
-
-        _phones = rawText
-            .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(CleanPhoneNumber)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct()
+        _phones = raw
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
             .ToList();
-
-        _currentPhoneIndex = 0;
-        _currentPhoneUsage = 0;
-
-        Console.WriteLine($"[PhoneBot] Loaded {_phones.Count} phones");
     }
 
-    private static string CleanPhoneNumber(string input)
+    private async Task LoadStateAsync()
     {
-        input = input.Trim();
+        try
+        {
+            var (state, sha) = await _github.GetAsync();
 
-        bool hasPlus = input.StartsWith("+");
+            _index = state.CurrentPhoneIndex;
+            _usage = state.CurrentPhoneUsage;
 
-        string digits = new string(input.Where(char.IsDigit).ToArray());
-
-        return hasPlus
-            ? "+" + digits
-            : digits;
+            _cache = state;
+            _lastSha = sha;
+        }
+        catch
+        {
+            _index = 0;
+            _usage = 0;
+        }
     }
 
     public async Task<string?> GetPhoneAsync()
     {
-        await _lock.WaitAsync();
+        BotState newState;
 
-        try
+        string phone;
+
+        lock (_lock)
         {
-            if (_currentPhoneIndex >= _phones.Count)
+            if (_index >= _phones.Count)
                 return null;
 
-            string phone = _phones[_currentPhoneIndex];
+            phone = _phones[_index];
 
-            _currentPhoneUsage++;
+            _usage++;
 
-            if (_currentPhoneUsage >= MaxUsagePerPhone)
+            if (_usage >= MaxUsage)
             {
-                _currentPhoneUsage = 0;
-                _currentPhoneIndex++;
+                _usage = 0;
+                _index++;
             }
 
-            return phone;
+            newState = new BotState
+            {
+                CurrentPhoneIndex = _index,
+                CurrentPhoneUsage = _usage
+            };
         }
-        finally
+
+        // защита от дублей + race fix
+        try
         {
-            _lock.Release();
+            var (latest, sha) = await _github.GetAsync();
+
+            // если state изменился — обновляем локально
+            _lastSha = sha;
+
+            var ok = await _github.TrySaveAsync(newState, sha);
+
+            if (!ok)
+                Console.WriteLine("[GITHUB] Save failed");
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[GITHUB ERROR] " + ex.Message);
+        }
+
+        return phone;
     }
 }

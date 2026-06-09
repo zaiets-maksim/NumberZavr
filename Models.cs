@@ -1,7 +1,7 @@
-namespace PhoneBot;
+namespace NumberZavr;
 
-public class UserUsage
+public class BotState
 {
-    public int CountToday { get; set; } = 0;
-    public DateTime LastResetDate { get; set; } = DateTime.UtcNow.Date;
+    public int CurrentPhoneIndex { get; set; }
+    public int CurrentPhoneUsage { get; set; }
 }

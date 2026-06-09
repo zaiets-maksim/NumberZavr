@@ -1,38 +1,27 @@
-using System.Text.Json;
-using PhoneBot;
-using Telegram.Bot;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
+using NumberZavr;
 
-var builder = WebApplication.CreateBuilder(args);
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration(config =>
+    {
+        config.AddJsonFile("appsettings.json", optional: false);
+    })
+    .ConfigureServices((context, services) =>
+    {
+        var cfg = context.Configuration;
 
-var botToken = builder.Configuration["BotToken"] ?? throw new Exception("BotToken missing");
+        var github = new GitHubStateService(
+            cfg["GitHubOwner"],
+            cfg["GitHubRepo"],
+            cfg["GitHubToken"]
+        );
 
-builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(botToken));
-builder.Services.AddSingleton<DataService>();
-builder.Services.AddSingleton<BotHandler>();
+        services.AddSingleton(github);
+        services.AddSingleton<DataService>();
+        services.AddHostedService<BotWorker>();
+    })
+    .Build();
 
-var app = builder.Build();
-
-// Використовуємо JsonElement для bypass-десеріалізації
-app.MapPost("/webhook", async (JsonElement update, BotHandler handler) =>
-{
-    await handler.HandleRawUpdateAsync(update);
-    return Results.Ok();
-});
-
-app.MapGet("/", () => "PhoneBot is running ✓");
-
-// Ініціалізація Webhook
-var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-lifetime.ApplicationStarted.Register(async () =>
-{
-    var bot = app.Services.GetRequiredService<ITelegramBotClient>();
-    var data = app.Services.GetRequiredService<DataService>();
-    var config = app.Services.GetRequiredService<IConfiguration>();
-    var webhookUrl = config["WebhookUrl"] ?? throw new Exception("WebhookUrl missing");
-
-    await bot.SetWebhook($"{webhookUrl.TrimEnd('/')}/webhook");
-    await data.InitAsync();
-    Console.WriteLine("[PhoneBot] System Ready");
-});
-
-app.Run();
+await host.RunAsync();

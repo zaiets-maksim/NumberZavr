@@ -1,7 +1,7 @@
 using System.Text.Json;
+using NumberZavr;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace PhoneBot;
@@ -74,9 +74,7 @@ public class BotHandler
         }
     }
 
-    private async Task HandleGetNumber(
-        long userId,
-        long chatId)
+    private async Task HandleGetNumber(long userId, long chatId)
     {
         var number = await _data.GetPhoneAsync();
 
