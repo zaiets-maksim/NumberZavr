@@ -15,13 +15,11 @@ public class GitHubStateService
 
     private const string FilePath = "state.json";
 
-    public GitHubStateService(string owner, string repo)
+    public GitHubStateService(string owner, string repo, string token)
     {
         _owner = owner;
         _repo = repo;
-
-        _token = Environment.GetEnvironmentVariable("GitHubToken")
-                 ?? throw new Exception("GitHubToken missing");
+        _token = token;
 
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("NumberZavrBot");
         _http.DefaultRequestHeaders.Authorization =

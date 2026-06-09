@@ -4,17 +4,25 @@ var builder = WebApplication.CreateBuilder(args);
 
 var config = builder.Configuration;
 
-var github = new GitHubStateService(
-    config["GitHubOwner"],
-    config["GitHubRepo"]
-);
+// ✅ правильно через DI factory
+builder.Services.AddSingleton<GitHubStateService>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
 
-builder.Services.AddSingleton(github);
+    return new GitHubStateService(
+        cfg["GitHubOwner"],
+        cfg["GitHubRepo"],
+        cfg["GitHubToken"]
+    );
+});
+
 builder.Services.AddSingleton<DataService>();
 builder.Services.AddHostedService<BotWorker>();
 
 var app = builder.Build();
 
+// 🔥 важно для Render (порт)
 app.MapGet("/", () => "Bot is running");
 
-app.Run($"http://0.0.0.0:{Environment.GetEnvironmentVariable("PORT") ?? "10000"}");
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+app.Run($"http://0.0.0.0:{port}");
