@@ -14,14 +14,11 @@ public class BotWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await _data.InitAsync();
-
         Console.WriteLine("[BOT] Started");
-
-        // здесь твоя логика Telegram bot polling / webhook handler
-        // пока заглушка:
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            // тут твоя логика Telegram bot polling / updates
             await Task.Delay(1000, stoppingToken);
         }
     }
