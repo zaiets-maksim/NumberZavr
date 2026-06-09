@@ -136,4 +136,35 @@ public class DataService
 
         return phone;
     }
+
+    public async Task ResetStateAsync()
+    {
+        var newState = new BotState
+        {
+            CurrentPhoneIndex = 0,
+            CurrentPhoneUsage = 0,
+            PhoneLastUsed = new Dictionary<string, DateTime>()
+        };
+
+        lock (_lock)
+        {
+            _index = 0;
+            _usage = 0;
+            _cache = newState;
+        }
+
+        try
+        {
+            var (latest, sha) = await _github.GetAsync();
+            _lastSha = sha;
+
+            var ok = await _github.TrySaveAsync(newState, sha);
+            if (!ok)
+                Console.WriteLine("[GITHUB] Reset failed");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[GITHUB ERROR] " + ex.Message);
+        }
+    }
 }

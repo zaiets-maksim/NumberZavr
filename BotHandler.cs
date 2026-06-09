@@ -71,6 +71,18 @@ public class BotHandler
                     "✅ Номери оновлено.",
                     replyMarkup: MainKeyboard(true));
                 break;
+
+            case "🗑️ Скинути":
+                if (!isAdmin)
+                    return;
+
+                await _data.ResetStateAsync();
+
+                await _bot.SendMessage(
+                    msg.Chat.Id,
+                    "🗑️ Стан бота повністю скинуто (індекс обнулено, історію використаних номерів очищено).",
+                    replyMarkup: MainKeyboard(true));
+                break;
         }
     }
 
@@ -102,7 +114,8 @@ public class BotHandler
         {
             rows.Add(new[]
             {
-                new KeyboardButton("🔄 Оновити")
+                new KeyboardButton("🔄 Оновити"),
+                new KeyboardButton("🗑️ Скинути")
             });
         }
 
