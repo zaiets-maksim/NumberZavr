@@ -1,4 +1,5 @@
 {
-  "CurrentPhoneIndex": 8,
-  "CurrentPhoneUsage": 0
+  "CurrentPhoneIndex": 0,
+  "CurrentPhoneUsage": 0,
+  "PhoneLastUsed": {}
 }
