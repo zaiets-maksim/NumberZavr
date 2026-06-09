@@ -56,50 +56,73 @@ public class DataService
             _usage = state.CurrentPhoneUsage;
 
             _cache = state;
+            _cache.PhoneLastUsed ??= new();
             _lastSha = sha;
         }
         catch
         {
             _index = 0;
             _usage = 0;
+            _cache = new BotState();
         }
     }
 
     public async Task<string?> GetPhoneAsync()
     {
+        string? phone = null;
         BotState newState;
-
-        string phone;
 
         lock (_lock)
         {
-            if (_index >= _phones.Count)
+            _cache.PhoneLastUsed ??= new();
+
+            if (_phones.Count == 0)
                 return null;
 
-            phone = _phones[_index];
-
-            _usage++;
-
-            if (_usage >= MaxUsage)
+            int startIndex = _index;
+            for (int i = 0; i < _phones.Count; i++)
             {
-                _usage = 0;
-                _index++;
+                int checkIndex = (startIndex + i) % _phones.Count;
+                var candidate = _phones[checkIndex];
+
+                if (!_cache.PhoneLastUsed.TryGetValue(candidate, out var lastUsed) ||
+                    DateTime.UtcNow - lastUsed >= TimeSpan.FromHours(24))
+                {
+                    phone = candidate;
+                    _index = (checkIndex + 1) % _phones.Count;
+                    _cache.PhoneLastUsed[candidate] = DateTime.UtcNow;
+                    break;
+                }
             }
 
             newState = new BotState
             {
                 CurrentPhoneIndex = _index,
-                CurrentPhoneUsage = _usage
+                CurrentPhoneUsage = 0,
+                PhoneLastUsed = _cache.PhoneLastUsed
             };
         }
 
-        // защита от дублей + race fix
+        if (phone == null)
+            return null;
+
         try
         {
             var (latest, sha) = await _github.GetAsync();
-
-            // если state изменился — обновляем локально
             _lastSha = sha;
+
+            latest.PhoneLastUsed ??= new();
+
+            foreach (var kvp in latest.PhoneLastUsed)
+            {
+                if (!newState.PhoneLastUsed.TryGetValue(kvp.Key, out var localTime) || kvp.Value > localTime)
+                {
+                    if (kvp.Key != phone)
+                    {
+                        newState.PhoneLastUsed[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
 
             var ok = await _github.TrySaveAsync(newState, sha);
 

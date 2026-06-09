@@ -79,7 +79,7 @@ public class BotHandler
         var number = await _data.GetPhoneAsync();
 
         string response = number == null
-            ? "😕 База номерів порожня."
+            ? "😕 Усі номери вже використані. Спробуйте пізніше."
             : $"📞 Твій номер:\n{number}";
 
         await _bot.SendMessage(
