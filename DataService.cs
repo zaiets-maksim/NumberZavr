@@ -33,12 +33,17 @@ public class DataService
 
     public async Task LoadPhonesAsync()
     {
-        var raw = await File.ReadAllTextAsync(PhonesFile);
+        var path = Path.Combine(AppContext.BaseDirectory, "data.txt");
+        var rawText = await File.ReadAllTextAsync(path);
 
-        _phones = raw
+        _phones = rawText
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(x => x.Trim())
             .ToList();
+        
+        Console.WriteLine("BASE DIR: " + AppContext.BaseDirectory);
+        Console.WriteLine("FILE EXISTS: " + File.Exists("data.txt"));
+        Console.WriteLine("FILE EXISTS ABS: " + File.Exists(Path.Combine(AppContext.BaseDirectory, "data.txt")));
     }
 
     private async Task LoadStateAsync()
