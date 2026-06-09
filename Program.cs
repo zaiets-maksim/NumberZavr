@@ -1,29 +1,43 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using NumberZavr;
 
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration(config =>
+var builder = WebApplication.CreateBuilder(args);
+
+// конфиг
+builder.Configuration.AddJsonFile("appsettings.json", optional: true);
+
+var app = builder.Build();
+
+// ==========================
+// 👇 твой бот (фон)
+// ==========================
+var github = new GitHubStateService(
+    builder.Configuration["GitHubOwner"],
+    builder.Configuration["GitHubRepo"]
+);
+
+var dataService = new DataService(github);
+
+// запускаем бот в фоне
+_ = Task.Run(async () =>
+{
+    await dataService.InitAsync();
+    Console.WriteLine("[BOT] Started");
+
+    while (true)
     {
-        config.AddJsonFile("appsettings.json", optional: true);
-    })
-    .ConfigureServices((context, services) =>
-    {
-        var cfg = context.Configuration;
+        await Task.Delay(1000);
+    }
+});
 
-        var owner = cfg["GitHubOwner"];
-        var repo = cfg["GitHubRepo"];
+// ==========================
+// 👇 фейковый HTTP сервер
+// ==========================
+app.MapGet("/", () => "Bot is running");
 
-        var github = new GitHubStateService(
-            owner,
-            repo
-        );
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
 
-        services.AddSingleton(github);
-        services.AddSingleton<DataService>();
-        services.AddHostedService<BotWorker>();
-    })
-    .Build();
-
-await host.RunAsync();
+app.Run($"http://0.0.0.0:{port}");
