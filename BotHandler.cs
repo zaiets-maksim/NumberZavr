@@ -40,10 +40,12 @@ public class BotHandler
 
     private async Task HandleMessageAsync(Message msg)
     {
-        if (msg.Text == null)
+        if (msg.Text == null || msg.From == null)
             return;
 
-        var isAdmin = msg.From?.Id == _adminId;
+        await _data.AddUserAsync(msg.From.Id);
+
+        var isAdmin = msg.From.Id == _adminId;
 
         switch (msg.Text.Trim())
         {

@@ -77,16 +77,16 @@ public class LifetimeEventsHostedService : IHostedService
 {
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly ITelegramBotClient _bot;
-    private readonly string _adminId;
+    private readonly DataService _data;
 
     public LifetimeEventsHostedService(
         IHostApplicationLifetime appLifetime,
         ITelegramBotClient bot,
-        IConfiguration config)
+        DataService data)
     {
         _appLifetime = appLifetime;
         _bot = bot;
-        _adminId = config["AdminId"] ?? "";
+        _data = data;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -100,34 +100,55 @@ public class LifetimeEventsHostedService : IHostedService
 
     private void OnStarted()
     {
-        if (long.TryParse(_adminId, out var id))
-        {
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await _bot.SendMessage(id, "Крошечка, бот готовий для твоїх лапок! 🐾");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[LIFETIME ERROR] {ex.Message}");
-                }
-            });
-        }
-    }
-
-    private void OnStopping()
-    {
-        if (long.TryParse(_adminId, out var id))
+        Task.Run(async () =>
         {
             try
             {
-                _bot.SendMessage(id, "Крошечка, бот перезавантажується, почекай 2 хвилинки 🔄").GetAwaiter().GetResult();
+                var users = _data.GetActiveUsers();
+                var tasks = users.Select(async userId =>
+                {
+                    try
+                    {
+                        await _bot.SendMessage(userId, "Крошечка, бот готовий для твоїх лапок! 🐾");
+                    }
+                    catch
+                    {
+                        // Игнорируем ошибки (например, если пользователь заблокировал бота)
+                    }
+                });
+                await Task.WhenAll(tasks);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[LIFETIME ERROR] {ex.Message}");
             }
+        });
+    }
+
+    private void OnStopping()
+    {
+        try
+        {
+            // Финальное сохранение состояния на GitHub перед остановкой
+            _data.SaveStateAsync().GetAwaiter().GetResult();
+
+            var users = _data.GetActiveUsers();
+            var tasks = users.Select(async userId =>
+            {
+                try
+                {
+                    await _bot.SendMessage(userId, "Крошечка, бот перезавантажується, почекай 2 хвилинки 🔄");
+                }
+                catch
+                {
+                    // Игнорируем
+                }
+            });
+            Task.WhenAll(tasks).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[LIFETIME ERROR] {ex.Message}");
         }
     }
 }

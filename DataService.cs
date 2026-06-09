@@ -5,7 +5,6 @@ namespace NumberZavr;
 public class DataService
 {
     private const string PhonesFile = "data.txt";
-    private const int MaxUsage = 1;
 
     private List<string> _phones = new();
 
@@ -19,6 +18,7 @@ public class DataService
     private string _lastSha = "";
 
     private BotState _cache = new();
+    private bool _dirty = false;
 
     public DataService(GitHubStateService github)
     {
@@ -57,10 +57,14 @@ public class DataService
 
             _cache = state;
             _cache.PhoneLastUsed ??= new();
+            _cache.ActiveUsers ??= new();
             _lastSha = sha;
+
+            Console.WriteLine($"[STATE] Loaded from GitHub: index={_index}, users={_cache.ActiveUsers.Count}, phones tracked={_cache.PhoneLastUsed.Count}");
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[STATE] Failed to load from GitHub: {ex.Message}");
             _index = 0;
             _usage = 0;
             _cache = new BotState();
@@ -70,7 +74,6 @@ public class DataService
     public async Task<string?> GetPhoneAsync()
     {
         string? phone = null;
-        BotState newState;
 
         lock (_lock)
         {
@@ -91,66 +94,81 @@ public class DataService
                     phone = candidate;
                     _index = (checkIndex + 1) % _phones.Count;
                     _cache.PhoneLastUsed[candidate] = DateTime.UtcNow;
+                    _cache.CurrentPhoneIndex = _index;
+                    _cache.CurrentPhoneUsage = 0;
+                    _dirty = true;
                     break;
                 }
             }
-
-            newState = new BotState
-            {
-                CurrentPhoneIndex = _index,
-                CurrentPhoneUsage = 0,
-                PhoneLastUsed = _cache.PhoneLastUsed
-            };
         }
 
-        if (phone == null)
-            return null;
-
-        try
-        {
-            var (latest, sha) = await _github.GetAsync();
-            _lastSha = sha;
-
-            latest.PhoneLastUsed ??= new();
-
-            foreach (var kvp in latest.PhoneLastUsed)
-            {
-                if (!newState.PhoneLastUsed.TryGetValue(kvp.Key, out var localTime) || kvp.Value > localTime)
-                {
-                    if (kvp.Key != phone)
-                    {
-                        newState.PhoneLastUsed[kvp.Key] = kvp.Value;
-                    }
-                }
-            }
-
-            var ok = await _github.TrySaveAsync(newState, sha);
-
-            if (!ok)
-                Console.WriteLine("[GITHUB] Save failed");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("[GITHUB ERROR] " + ex.Message);
-        }
+        if (phone != null)
+            await SaveStateAsync();
 
         return phone;
     }
 
     public async Task ResetStateAsync()
     {
-        var newState = new BotState
+        lock (_lock)
         {
-            CurrentPhoneIndex = 0,
-            CurrentPhoneUsage = 0,
-            PhoneLastUsed = new Dictionary<string, DateTime>()
-        };
+            _cache.ActiveUsers ??= new();
+
+            _index = 0;
+            _usage = 0;
+            _cache.CurrentPhoneIndex = 0;
+            _cache.CurrentPhoneUsage = 0;
+            _cache.PhoneLastUsed = new Dictionary<string, DateTime>();
+            _dirty = true;
+        }
+
+        // Сброс — важная операция, сохраняем немедленно
+        await SaveStateAsync();
+    }
+
+    public List<long> GetActiveUsers()
+    {
+        lock (_lock)
+        {
+            _cache.ActiveUsers ??= new();
+            return _cache.ActiveUsers.ToList();
+        }
+    }
+
+    public async Task AddUserAsync(long userId)
+    {
+        bool isNew;
+        lock (_lock)
+        {
+            _cache.ActiveUsers ??= new();
+            isNew = _cache.ActiveUsers.Add(userId);
+            if (isNew)
+                _dirty = true;
+        }
+
+        if (isNew)
+            await SaveStateAsync();
+    }
+
+    public async Task SaveStateAsync()
+    {
+        BotState snapshot;
+        bool needsSave;
 
         lock (_lock)
         {
-            _index = 0;
-            _usage = 0;
-            _cache = newState;
+            needsSave = _dirty;
+            if (!needsSave)
+                return;
+
+            // Снимаем копию состояния
+            snapshot = new BotState
+            {
+                CurrentPhoneIndex = _cache.CurrentPhoneIndex,
+                CurrentPhoneUsage = _cache.CurrentPhoneUsage,
+                PhoneLastUsed = new Dictionary<string, DateTime>(_cache.PhoneLastUsed ?? new()),
+                ActiveUsers = new HashSet<long>(_cache.ActiveUsers ?? new())
+            };
         }
 
         try
@@ -158,9 +176,20 @@ public class DataService
             var (latest, sha) = await _github.GetAsync();
             _lastSha = sha;
 
-            var ok = await _github.TrySaveAsync(newState, sha);
-            if (!ok)
-                Console.WriteLine("[GITHUB] Reset failed");
+            var ok = await _github.TrySaveAsync(snapshot, sha);
+
+            if (ok)
+            {
+                lock (_lock)
+                {
+                    _dirty = false;
+                }
+                Console.WriteLine("[STATE] Saved to GitHub");
+            }
+            else
+            {
+                Console.WriteLine("[GITHUB] Save failed");
+            }
         }
         catch (Exception ex)
         {
