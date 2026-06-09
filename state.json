@@ -1,4 +1,7 @@
 {
-  "CurrentPhoneIndex": 55,
-  "CurrentPhoneUsage": 0
+  "CurrentPhoneIndex": 1,
+  "CurrentPhoneUsage": 0,
+  "PhoneLastUsed": {
+    "0995294454": "2026-06-09T18:49:46.0192418Z"
+  }
 }
