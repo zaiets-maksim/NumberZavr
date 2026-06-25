@@ -154,22 +154,7 @@ public class LifetimeEventsHostedService : IHostedService
     {
         try
         {
-            // Финальное сохранение состояния на GitHub перед остановкой
             _data.SaveStateAsync().GetAwaiter().GetResult();
-
-            var users = _data.GetActiveUsers();
-            var tasks = users.Select(async userId =>
-            {
-                try
-                {
-                    await _bot.SendMessage(userId, "Крошечка, бот перезавантажується, почекай 2 хвилинки 🔄");
-                }
-                catch
-                {
-                    // Игнорируем
-                }
-            });
-            Task.WhenAll(tasks).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
